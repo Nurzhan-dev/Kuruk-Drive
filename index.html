@@ -82,16 +82,14 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Supabase клиент (замени на свои ключи)
-        const supabaseUrl = 'YOUR_SUPABASE_URL';  // Замени
-        const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';  // Замени
+        const supabaseUrl = 'https://fprhprgmdmtgjpokzpyp.supabase.co';
+        const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwcmhwcmdtZG10Z2pwb2t6cHlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNDcyNDksImV4cCI6MjA4MDYyMzI0OX0.LFq94eKUDJWAfFZlPrnvbKZbtQI1dP-cAHRDUNiRcgs';
         const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 
-        // Главный компонент
         function App() {
             const [user, setUser] = useState(null);
             const [orders, setOrders] = useState([]);
-            const [view, setView] = useState('home');  // home, register, login, dashboard, order
+            const [view, setView] = useState('home');
 
             useEffect(() => {
                 const fetchUser = async () => {
