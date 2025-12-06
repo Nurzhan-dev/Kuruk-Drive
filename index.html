@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kuruk Drive</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 20px; 
+            background-color: #f4f4f4; 
+            color: #333; 
+        }
+        #root { max-width: 1200px; margin: 0 auto; }
+        h1, h2 { text-align: center; }
+        form { 
+            display: flex; 
+            flex-direction: column; 
+            max-width: 400px; 
+            margin: 0 auto 20px; 
+        }
+        input, select, button { 
+            margin: 10px 0; 
+            padding: 10px; 
+            font-size: 16px; 
+            border: 1px solid #ccc; 
+            border-radius: 5px; 
+        }
+        button { 
+            background-color: #007bff; 
+            color: white; 
+            cursor: pointer; 
+            transition: background-color 0.3s; 
+        }
+        button:hover { background-color: #0056b3; }
+        ul { 
+            list-style-type: none; 
+            padding: 0; 
+            display: flex; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+        }
+        li { 
+            background: white; 
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin: 10px; 
+            width: 300px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            transition: transform 0.2s; 
+        }
+        li:hover { transform: scale(1.02); }
+        .actions { 
+            display: flex; 
+            justify-content: space-around; 
+            margin-top: 10px; 
+        }
+        .hidden { display: none; }
+
+        /* Адаптивность для мобильки */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            form { max-width: 100%; }
+            li { width: 100%; margin: 10px 0; }
+            ul { flex-direction: column; align-items: center; }
+        }
+        @media (max-width: 480px) {
+            input, select, button { font-size: 14px; padding: 8px; }
+            h1, h2 { font-size: 1.5em; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Supabase клиент (замени на свои ключи)
+        const supabaseUrl = 'YOUR_SUPABASE_URL';  // Замени
+        const supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';  // Замени
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+
+        // Главный компонент
+        function App() {
+            const [user, setUser] = useState(null);
+            const [orders, setOrders] = useState([]);
+            const [view, setView] = useState('home');  // home, register, login, dashboard, order
+
+            useEffect(() => {
+                const fetchUser = async () => {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user) {
+                        const { data } = await supabase.from('users').select('role').eq('id', user.id).single();
+                        setUser({ ...user, role: data.role });
+                        setView('dashboard');
+                    }
+                };
+                fetchUser();
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+
+                const fetchOrders = async () => {
+                    let query = supabase.from('orders').select('*');
+                    if (user.role === 'passenger') {
+                        query = query.eq('passenger_id', user.id);
+                    } else if (user.role === 'driver') {
+                        query = query.eq('status', 'pending');
+                    }
+                    const { data } = await query;
+                    setOrders(data || []);
+                };
+                fetchOrders();
+
+                // Реал-тайм подписка
+                const subscription = supabase
+                    .channel('orders-channel')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders())
+                    .subscribe();
+
+                return () => { supabase.removeChannel(subscription); };
+            }, [user]);
+
+            const handleRegister = async (email, password, role) => {
+                const { data, error } = await supabase.auth.signUp({ email, password });
+                if (error) return alert(error.message);
+                if (data.user) {
+                    await supabase.from('users').insert({ id: data.user.id, email, role });
+                    alert('Регистрация успешна! Войдите.');
+                    setView('login');
+                }
+            };
+
+            const handleLogin = async (email, password) => {
+                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) return alert(error.message);
+                setView('dashboard');
+            };
+
+            const handleLogout = async () => {
+                await supabase.auth.signOut();
+                setUser(null);
+                setView('home');
+            };
+
+            const handleOrder = async (from, to) => {
+                if (!user) return;
+                await supabase.from('orders').insert({ passenger_id: user.id, from_address: from, to_address: to, status: 'pending' });
+                alert('Заказ создан!');
+                setView('dashboard');
+            };
+
+            const handleAccept = async (orderId) => {
+                if (user.role !== 'driver') return;
+                await supabase.from('orders').update({ status: 'accepted' }).eq('id', orderId);
+            };
+
+            // Компоненты внутри
+            function Home() {
+                return (
+                    <div>
+                        <h1>Такси App</h1>
+                        <div className="actions">
+                            <button onClick={() => setView('register')}>Регистрация</button>
+                            <button onClick={() => setView('login')}>Вход</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            function Register() {
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+                const [role, setRole] = useState('passenger');
+
+                return (
+                    <div>
+                        <h2>Регистрация</h2>
+                        <form>
+                            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+                            <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} />
+                            <select value={role} onChange={e => setRole(e.target.value)}>
+                                <option value="passenger">Пассажир</option>
+                                <option value="driver">Водитель</option>
+                            </select>
+                            <button type="button" onClick={() => handleRegister(email, password, role)}>Зарегистрироваться</button>
+                            <button type="button" onClick={() => setView('home')}>Назад</button>
+                        </form>
+                    </div>
+                );
+            }
+
+            function Login() {
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+
+                return (
+                    <div>
+                        <h2>Вход</h2>
+                        <form>
+                            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+                            <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} />
+                            <button type="button" onClick={() => handleLogin(email, password)}>Войти</button>
+                            <button type="button" onClick={() => setView('home')}>Назад</button>
+                        </form>
+                    </div>
+                );
+            }
+
+            function Dashboard() {
+                if (!user) return <div>Загрузка...</div>;
+
+                return (
+                    <div>
+                        <h2>Дашборд ({user.role})</h2>
+                        <ul>
+                            {orders.map(order => (
+                                <li key={order.id}>
+                                    <strong>От:</strong> {order.from_address}<br />
+                                    <strong>К:</strong> {order.to_address}<br />
+                                    <strong>Статус:</strong> {order.status}
+                                    {user.role === 'driver' && order.status === 'pending' && (
+                                        <button onClick={() => handleAccept(order.id)}>Принять</button>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                        {user.role === 'passenger' && <button onClick={() => setView('order')}>Новый заказ</button>}
+                        <button onClick={handleLogout}>Выход</button>
+                    </div>
+                );
+            }
+
+            function OrderForm() {
+                const [from, setFrom] = useState('');
+                const [to, setTo] = useState('');
+
+                return (
+                    <div>
+                        <h2>Заказать поездку</h2>
+                        <form>
+                            <input placeholder="Откуда" value={from} onChange={e => setFrom(e.target.value)} />
+                            <input placeholder="Куда" value={to} onChange={e => setTo(e.target.value)} />
+                            <button type="button" onClick={() => handleOrder(from, to)}>Заказать</button>
+                            <button type="button" onClick={() => setView('dashboard')}>Назад</button>
+                        </form>
+                    </div>
+                );
+            }
+
+            return (
+                <div>
+                    {view === 'home' && <Home />}
+                    {view === 'register' && <Register />}
+                    {view === 'login' && <Login />}
+                    {view === 'dashboard' && <Dashboard />}
+                    {view === 'order' && <OrderForm />}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
